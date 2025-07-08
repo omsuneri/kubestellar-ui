@@ -23,55 +23,37 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      actions: read
-      security-events: write
-    outputs:
-      followup: ${{ steps.spelling.outputs.followup }}
-      internal_state_directory: ${{ steps.spelling.outputs.internal_state_directory }}
-      docker_container: ${{ steps.spelling.outputs.docker_container }}
-    env:
-      workflow_check_commit_messages: commits
-      TMP: ${{ runner.workspace }}/spelling-tmp
-      TEMP: ${{ runner.workspace }}/spelling-tmp
-      TMPDIR: ${{ runner.workspace }}/spelling-tmp
     runs-on: ubuntu-latest
-    if: ${{ contains(github.event_name, 'pull_request') || github.event_name == 'push' }}
-    concurrency:
-      group: spelling-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
+    env:
+      # Force all temp files to use workspace directory
+      TMPDIR: ${{ github.workspace }}/.spelling-tmp
+      TMP: ${{ github.workspace }}/.spelling-tmp
+      TEMP: ${{ github.workspace }}/.spelling-tmp
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: ${{ !contains(env.workflow_check_commit_messages, 'commits') && '1' || '0' }}
-          filter: ${{ contains(env.workflow_check_commit_messages, 'commits') && 'tree:0' || '' }}
-
-      - name: Setup temp environment
+      - name: Setup environment
         run: |
           mkdir -p "$TMPDIR"
           chmod 777 "$TMPDIR"
           echo "Using temp directory: $TMPDIR"
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Run spell check
-        id: spelling
         uses: check-spelling/check-spelling@v0.0.26
         with:
           suppress_push_for_open_pull_request: 1
           check_file_names: 1
-          spell_check_this: check-spelling/spell-check-this@v0.0.26
-          checkout: false
           post_comment: 0
-          use_magic_file: 1
-          report-timing: 1
-          experimental_apply_changes_via_bot: 1
-          use_sarif: ${{ (!github.event.pull_request || (github.event.pull_request.head.repo.full_name == github.repository)) && 1 }}
-          extra_dictionary_limit: 10
           extra_dictionaries: |
             cspell:software-terms/dict/softwareTerms.txt
             cspell:node/node.txt
             cspell:python/src/python/python-lib.txt
             cspell:shell/dict/shell-all-words.txt
-          check_commit_messages: ${{ env.workflow_check_commit_messages }}
+
+      - name: Cleanup temp files
+        if: always()
+        run: rm -rf "$TMPDIR"
 
   comment-push:
     name: Report (Push)
