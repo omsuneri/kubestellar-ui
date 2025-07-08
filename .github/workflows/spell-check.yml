@@ -25,11 +25,9 @@ jobs:
       actions: read
       security-events: write
     outputs:
-      followup: ${{ steps.spelling.outputs.followup }}
-      internal_state_directory: ${{ steps.spelling.outputs.internal_state_directory }}
-      docker_container: ${{ steps.spelling.outputs.docker_container }}
-    env:
-      workflow_check_commit_messages: commits
+      has_issues: ${{ steps.spell_check.outputs.has_issues }}
+      results_path: ${{ steps.spell_check.outputs.results_path }}
+      pr_number: ${{ steps.spell_check.outputs.pr_number }}
     runs-on: ubuntu-latest
     if: ${{ contains(github.event_name, 'pull_request') || github.event_name == 'push' }}
     concurrency:
@@ -39,48 +37,232 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ !contains(env.workflow_check_commit_messages, 'commits') && '1' || '0' }}
-          filter: ${{ contains(env.workflow_check_commit_messages, 'commits') && 'tree:0' || '' }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare working directory
-        run: |
-          git clone . ../introspected/
-          mv ../introspected .
-          cp .git/config introspected/.git
-      - name: Merge PR code
-        if: ${{ contains(github.event_name, 'pull_request') }}
-        uses: check-spelling/checkout-merge@v0.0.6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: introspected
+          node-version: '18'
+
+      - name: Install cspell
+        run: npm install -g cspell@latest
+
+      - name: Create cspell config
+        run: |
+          cat > .cspell.json << 'EOF'
+          {
+            "version": "0.2",
+            "language": "en",
+            "words": [
+              "kubestellar",
+              "kubectl",
+              "kubernetes",
+              "yaml",
+              "json",
+              "github",
+              "repo",
+              "deps",
+              "config",
+              "workflow",
+              "api",
+              "ui",
+              "backend",
+              "frontend",
+              "devops",
+              "cicd",
+              "dockerfile",
+              "nginx",
+              "nodejs",
+              "typescript",
+              "javascript",
+              "css",
+              "html",
+              "scss",
+              "env",
+              "vars",
+              "params",
+              "args",
+              "utils",
+              "helpers",
+              "auth",
+              "oauth",
+              "jwt",
+              "http",
+              "https",
+              "tcp",
+              "udp",
+              "dns",
+              "ssl",
+              "tls",
+              "cors",
+              "csrf",
+              "xss",
+              "sql",
+              "nosql",
+              "mongodb",
+              "mysql",
+              "postgres",
+              "redis",
+              "memcached",
+              "elasticsearch",
+              "grafana",
+              "prometheus",
+              "istio",
+              "helm",
+              "kustomize",
+              "argocd",
+              "flux",
+              "tekton",
+              "jenkins",
+              "gitlab",
+              "bitbucket",
+              "containerfile",
+              "podman",
+              "buildah",
+              "skopeo",
+              "crio",
+              "containerd",
+              "runc",
+              "oci",
+              "cni",
+              "csi",
+              "rbac",
+              "pvc",
+              "pv",
+              "svc",
+              "ingress",
+              "egress",
+              "loadbalancer",
+              "nodeport",
+              "clusterip",
+              "headless",
+              "statefulset",
+              "daemonset",
+              "deployment",
+              "replicaset",
+              "cronjob",
+              "configmap",
+              "secret",
+              "serviceaccount",
+              "namespace",
+              "cluster",
+              "node",
+              "pod",
+              "container",
+              "image",
+              "registry",
+              "repository",
+              "tag",
+              "latest",
+              "alpine",
+              "ubuntu",
+              "debian",
+              "centos",
+              "rhel",
+              "fedora",
+              "busybox",
+              "scratch",
+              "distroless"
+            ],
+            "ignoreWords": [
+              "TODO",
+              "FIXME",
+              "XXX",
+              "HACK",
+              "NOTE"
+            ],
+            "ignorePaths": [
+              "node_modules/**",
+              ".git/**",
+              "dist/**",
+              "build/**",
+              "*.log",
+              "*.lock",
+              "package-lock.json",
+              "yarn.lock",
+              "go.sum",
+              "*.min.js",
+              "*.min.css",
+              "*.map",
+              "*.woff*",
+              "*.ttf",
+              "*.eot",
+              "*.svg",
+              "*.png",
+              "*.jpg",
+              "*.jpeg",
+              "*.gif",
+              "*.ico",
+              "*.webp",
+              "*.pdf",
+              "*.zip",
+              "*.tar*",
+              "*.gz",
+              "*.bz2",
+              "*.xz",
+              "*.7z",
+              "*.rar",
+              "*.deb",
+              "*.rpm",
+              "*.dmg",
+              "*.exe",
+              "*.msi",
+              "*.app",
+              "*.bin",
+              "*.dat",
+              "*.db",
+              "*.sqlite*"
+            ],
+            "files": [
+              "**/*.{js,jsx,ts,tsx,json,md,txt,yml,yaml}",
+              "**/*.{html,css,scss,sass}",
+              "**/*.{py,go,rs,java,cpp,c,h}",
+              "**/*.{sh,bash,zsh}"
+            ]
+          }
+          EOF
 
       - name: Run spell check
-        if: env.MERGE_FAILED != '1'
-        id: spelling
-        uses: check-spelling/check-spelling@v0.0.23
+        id: spell_check
+        run: |
+          # Create results directory
+          mkdir -p spell-check-results
+          
+          # Run cspell and capture output
+          if cspell --config .cspell.json --no-progress --show-context --show-suggestions --relative > spell-check-results/results.txt 2>&1; then
+            echo "has_issues=false" >> $GITHUB_OUTPUT
+            echo "✅ No spelling issues found"
+          else
+            echo "has_issues=true" >> $GITHUB_OUTPUT
+            echo "❌ Spelling issues found"
+            
+            # Format results for better readability
+            cat spell-check-results/results.txt | head -50 > spell-check-results/summary.txt
+            
+            # Count issues
+            ISSUE_COUNT=$(grep -c "Unknown word" spell-check-results/results.txt || echo "0")
+            echo "Found $ISSUE_COUNT spelling issues"
+            echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "results_path=spell-check-results" >> $GITHUB_OUTPUT
+          echo "pr_number=${{ github.event.pull_request.number || 'none' }}" >> $GITHUB_OUTPUT
+
+      - name: Upload spell check results
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          suppress_push_for_open_pull_request: 1
-          check_file_names: 1
-          experimental_path: introspected
-          spell_check_this: check-spelling/spell-check-this@v0.0.23
-          checkout: false
-          post_comment: 0
-          use_magic_file: 1
-          report-timing: 1
-          experimental_apply_changes_via_bot: 1
-          use_sarif: ${{ (!github.event.pull_request || (github.event.pull_request.head.repo.full_name == github.repository)) && 1 }}
-          extra_dictionary_limit: 10
-          extra_dictionaries: |
-            cspell:software-terms/dict/softwareTerms.txt
-            cspell:node/node.txt
-            cspell:python/src/python/python-lib.txt
-            cspell:shell/dict/shell-all-words.txt
-          check_commit_messages: ${{ env.workflow_check_commit_messages }}
-          ignore-pattern: '[^\p{Ll}\p{Lm}\p{Lt}\p{Lu}]'
-          upper-pattern: '[\p{Lu}\p{Lt}\p{Lm}]'
-          lower-pattern: '[\p{Ll}\p{Lm}]'
-          not-lower-pattern: '[^\p{Ll}\p{Lm}]'
-          not-upper-or-lower-pattern: '[^\p{Lu}\p{Lt}\p{Lm}]'
-          punctuation-pattern: "'"
+          name: spell-check-results
+          path: spell-check-results/
+          retention-days: 7
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: spell-check-results/results.sarif
+        continue-on-error: true
 
   comment-push:
     name: Report (Push)
@@ -88,16 +270,53 @@ jobs:
     needs: spelling
     permissions:
       contents: write
-    if: (success() || failure()) && needs.spelling.outputs.followup && github.event_name == 'push'
+      actions: read
+    if: always() && needs.spelling.outputs.has_issues == 'true' && github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.23
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download spell check results
+        uses: actions/download-artifact@v4
         with:
-          checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.23
-          task: ${{ needs.spelling.outputs.followup }}
-          internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
-          caller_container: ${{ needs.spelling.outputs.docker_container }}
+          name: spell-check-results
+          path: spell-check-results/
+
+      - name: Create commit comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'spell-check-results/summary.txt';
+            
+            if (fs.existsSync(path)) {
+              const results = fs.readFileSync(path, 'utf8');
+              const body = `## 📝 Spelling Check Results
+              
+              Spelling issues found in commit ${{ github.sha }}:
+              
+              \`\`\`
+              ${results}
+              \`\`\`
+              
+              Please review and fix the spelling issues above.
+              
+              <details>
+              <summary>How to fix</summary>
+              
+              1. Fix the spelling in your code
+              2. Or add legitimate terms to the project dictionary
+              3. Push your changes to re-run the check
+              
+              </details>`;
+              
+              await github.rest.repos.createCommitComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: context.sha,
+                body: body
+              });
+            }
 
   comment-pr:
     name: Report (PR)
@@ -105,33 +324,139 @@ jobs:
     needs: spelling
     permissions:
       pull-requests: write
-    if: (success() || failure()) && needs.spelling.outputs.followup && contains(github.event_name, 'pull_request')
+      actions: read
+    if: always() && needs.spelling.outputs.has_issues == 'true' && contains(github.event_name, 'pull_request')
     steps:
-      - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.23
-        with:
-          checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.23
-          task: ${{ needs.spelling.outputs.followup }}
-          internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
-          caller_container: ${{ needs.spelling.outputs.docker_container }}
-          experimental_apply_changes_via_bot: 1
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  update:
-    name: Update Expect List
+      - name: Download spell check results
+        uses: actions/download-artifact@v4
+        with:
+          name: spell-check-results
+          path: spell-check-results/
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'spell-check-results/summary.txt';
+            
+            if (fs.existsSync(path)) {
+              const results = fs.readFileSync(path, 'utf8');
+              const body = `## 📝 Spelling Check Results
+              
+              Spelling issues found in this PR:
+              
+              \`\`\`
+              ${results}
+              \`\`\`
+              
+              Please review and fix the spelling issues above.
+              
+              <details>
+              <summary>How to fix</summary>
+              
+              1. Fix the spelling in your code
+              2. Or add legitimate terms to the project dictionary by editing \`.cspell.json\`
+              3. Push your changes to re-run the check
+              
+              </details>
+              
+              ---
+              
+              To add words to the dictionary, you can comment: \`@github-actions add-words: word1, word2, word3\``;
+              
+              // Find existing comment
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              
+              const existingComment = comments.data.find(comment => 
+                comment.user.type === 'Bot' && comment.body.includes('📝 Spelling Check Results')
+              );
+              
+              if (existingComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: body
+                });
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: body
+                });
+              }
+            }
+
+  update-dictionary:
+    name: Update Dictionary
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       actions: read
-    if: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@check-spelling-bot apply') }}
+    if: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@github-actions add-words:') }}
     concurrency:
       group: spelling-update-${{ github.event.issue.number }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.23
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          experimental_apply_changes_via_bot: 1
-          checkout: false
-          ssh_key: "${{ secrets.CHECK_SPELLING }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Extract and add words
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = context.payload.comment.body;
+            const match = comment.match(/@github-actions add-words:\s*([^\\n]+)/);
+            
+            if (match) {
+              const wordsToAdd = match[1].split(',').map(w => w.trim()).filter(w => w);
+              console.log('Words to add:', wordsToAdd);
+              
+              // Read current config
+              let config = {};
+              try {
+                config = JSON.parse(fs.readFileSync('.cspell.json', 'utf8'));
+              } catch (e) {
+                console.log('Creating new config');
+                config = { version: "0.2", language: "en", words: [] };
+              }
+              
+              // Add new words
+              if (!config.words) config.words = [];
+              const newWords = wordsToAdd.filter(word => !config.words.includes(word));
+              config.words = [...config.words, ...newWords].sort();
+              
+              // Write updated config
+              fs.writeFileSync('.cspell.json', JSON.stringify(config, null, 2));
+              
+              // Commit changes
+              await exec.exec('git', ['config', 'user.name', 'github-actions[bot]']);
+              await exec.exec('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com']);
+              await exec.exec('git', ['add', '.cspell.json']);
+              await exec.exec('git', ['commit', '-m', `Add words to dictionary: ${newWords.join(', ')}`]);
+              await exec.exec('git', ['push']);
+              
+              // Reply to comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ Added ${newWords.length} words to the dictionary: ${newWords.join(', ')}`
+              });
+            }
