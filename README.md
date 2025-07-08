@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>
-    <a href="https://kubestellar.io/">Read more about KubeStellar</a>
+    <a href="https://kubestellar.io/">Read mlar</a>
   </strong>
 </p>
 
