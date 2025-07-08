@@ -56,12 +56,12 @@ jobs:
       - name: Run spell check
         if: env.MERGE_FAILED != '1'
         id: spelling
-        uses: check-spelling/check-spelling@v0.0.22
+        uses: check-spelling/check-spelling@v0.0.23
         with:
           suppress_push_for_open_pull_request: 1
           check_file_names: 1
           experimental_path: introspected
-          spell_check_this: check-spelling/spell-check-this@v0.0.22
+          spell_check_this: check-spelling/spell-check-this@v0.0.23
           checkout: false
           post_comment: 0
           use_magic_file: 1
@@ -91,10 +91,10 @@ jobs:
     if: (success() || failure()) && needs.spelling.outputs.followup && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.22
+      - uses: check-spelling/check-spelling@v0.0.23
         with:
           checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.22
+          spell_check_this: check-spelling/spell-check-this@v0.0.23
           task: ${{ needs.spelling.outputs.followup }}
           internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
           caller_container: ${{ needs.spelling.outputs.docker_container }}
@@ -108,10 +108,10 @@ jobs:
     if: (success() || failure()) && needs.spelling.outputs.followup && contains(github.event_name, 'pull_request')
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.22
+      - uses: check-spelling/check-spelling@v0.0.23
         with:
           checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.22
+          spell_check_this: check-spelling/spell-check-this@v0.0.23
           task: ${{ needs.spelling.outputs.followup }}
           internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
           caller_container: ${{ needs.spelling.outputs.docker_container }}
@@ -130,7 +130,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.22
+      - uses: check-spelling/check-spelling@v0.0.23
         with:
           experimental_apply_changes_via_bot: 1
           checkout: false
