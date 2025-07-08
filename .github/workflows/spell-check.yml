@@ -12,7 +12,7 @@ on:
     types: [opened, reopened, synchronize]
   issue_comment:
     types: [created]
-  workflow_dispatch:  # Added for manual triggering
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,7 +31,10 @@ jobs:
       docker_container: ${{ steps.spelling.outputs.docker_container }}
     env:
       workflow_check_commit_messages: commits
-      TMPDIR: ${{ runner.temp }}/check-spelling-tmp  # Critical fix for /tmp issues
+      # Force all temp files to use runner's workspace
+      TMP: ${{ runner.temp }}/check-spelling-tmp
+      TEMP: ${{ runner.temp }}/check-spelling-tmp
+      TMPDIR: ${{ runner.temp }}/check-spelling-tmp
     runs-on: ubuntu-latest
     if: ${{ contains(github.event_name, 'pull_request') || github.event_name == 'push' }}
     concurrency:
@@ -44,16 +47,20 @@ jobs:
           fetch-depth: ${{ !contains(env.workflow_check_commit_messages, 'commits') && '1' || '0' }}
           filter: ${{ contains(env.workflow_check_commit_messages, 'commits') && 'tree:0' || '' }}
 
-      - name: Set up temp directory
-        run: mkdir -p "$TMPDIR" && chmod 777 "$TMPDIR"
+      - name: Setup temp environment
+        run: |
+          mkdir -p "$TMPDIR"
+          chmod 777 "$TMPDIR"
+          echo "TMPDIR set to: $TMPDIR"
+          ls -la "$TMPDIR"
 
       - name: Run spell check
         id: spelling
-        uses: check-spelling/check-spelling@v0.0.25  # Changed from prerelease to stable
+        uses: check-spelling/check-spelling@v0.0.26  # Updated to latest stable
         with:
           suppress_push_for_open_pull_request: 1
           check_file_names: 1
-          spell_check_this: check-spelling/spell-check-this@v0.0.25
+          spell_check_this: check-spelling/spell-check-this@v0.0.26
           checkout: false
           post_comment: 0
           use_magic_file: 1
@@ -77,10 +84,12 @@ jobs:
     if: (success() || failure()) && needs.spelling.outputs.followup && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.25
+      - uses: check-spelling/check-spelling@v0.0.26
+        env:
+          TMPDIR: ${{ runner.temp }}/check-spelling-comment
         with:
           checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.25
+          spell_check_this: check-spelling/spell-check-this@v0.0.26
           task: ${{ needs.spelling.outputs.followup }}
           internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
           caller_container: ${{ needs.spelling.outputs.docker_container }}
@@ -94,10 +103,12 @@ jobs:
     if: (success() || failure()) && needs.spelling.outputs.followup && contains(github.event_name, 'pull_request')
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.25
+      - uses: check-spelling/check-spelling@v0.0.26
+        env:
+          TMPDIR: ${{ runner.temp }}/check-spelling-comment
         with:
           checkout: true
-          spell_check_this: check-spelling/spell-check-this@v0.0.25
+          spell_check_this: check-spelling/spell-check-this@v0.0.26
           task: ${{ needs.spelling.outputs.followup }}
           internal_state_directory: ${{ needs.spelling.outputs.internal_state_directory }}
           caller_container: ${{ needs.spelling.outputs.docker_container }}
@@ -116,8 +127,11 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - uses: check-spelling/check-spelling@v0.0.25
+      - uses: check-spelling/check-spelling@v0.0.26
+        env:
+          TMPDIR: ${{ runner.temp }}/check-spelling-update
         with:
           experimental_apply_changes_via_bot: 1
           checkout: false
           ssh_key: "${{ secrets.CHECK_SPELLING }}"
+          
